@@ -21,6 +21,13 @@ class TestCasePrometheusMiddleware:
         def bar(request):
             raise ValueError("bar")
 
+        @app_.route("/exception-with-chain/")
+        def exception_with_chain(request):
+            try:
+                raise ValueError("Original Exception")
+            except ValueError as exc:
+                raise TypeError("New Exception") from exc
+
         @app_.route("/foo/{bar}/")
         def foobar(request):
             return PlainTextResponse(f"Foo: {request.path_params['bar']}")
@@ -69,6 +76,37 @@ class TestCasePrometheusMiddleware:
         )
         assert (
             "starlette_responses_total{" 'method="GET",path_template="/bar/",status_code="500"' "} 1.0" in metrics_text
+        )
+
+        # Asserts: Requests in progress
+        assert 'starlette_requests_in_progress{method="GET",path_template="/bar/"} 0.0' in metrics_text
+        assert 'starlette_requests_in_progress{method="GET",path_template="/metrics/"} 1.0' in metrics_text
+
+    def test_view_exception_with_chain(self, client):
+        # Do a request
+        with pytest.raises(TypeError) as exc:
+            client.get("/exception-with-chain/")
+
+        # Get metrics
+        response = client.get("/metrics/")
+        metrics_text = response.content.decode()
+
+        # Asserts: Exception chain gets propagated
+        assert exc.value.args == ("New Exception",)
+        assert isinstance(exc.value.__cause__, ValueError)
+        assert exc.value.__cause__.args == ("Original Exception",)
+
+        # Asserts: Requests
+        assert 'starlette_requests_total{method="GET",path_template="/exception-with-chain/"} 1.0' in metrics_text
+
+        # Asserts: Responses
+        assert (
+            "starlette_exceptions_total{"
+            'exception_type="TypeError",method="GET",path_template="/exception-with-chain/"'
+            "} 1.0" in metrics_text
+        )
+        assert (
+            "starlette_responses_total{" 'method="GET",path_template="/exception-with-chain/",status_code="500"' "} 1.0" in metrics_text
         )
 
         # Asserts: Requests in progress

@@ -54,7 +54,7 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         except BaseException as e:
             status_code = HTTP_500_INTERNAL_SERVER_ERROR
             EXCEPTIONS.labels(method=method, path_template=path_template, exception_type=type(e).__name__).inc()
-            raise e from None
+            raise e
         else:
             status_code = response.status_code
             after_time = time.perf_counter()
